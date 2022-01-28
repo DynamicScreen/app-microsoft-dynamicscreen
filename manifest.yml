@@ -20,7 +20,7 @@ modules:
         logo: fa fa-microsoft
         description: modules.microsoft-driver.description
         identifier: microsoft-driver
-        color: red
+        color: blue
         type: auth-provider
         options:
             provider: microsoft
