@@ -1,0 +1,16 @@
+{
+    "authors": [
+        {
+            "name": "DynamicScreen",
+            "email": "bonjour@dynamicscreen.com"
+        }
+    ],
+    "require": {
+        "microsoft/microsoft-graph": "^1.51"
+    },
+    "autoload": {
+        "psr-4": {
+            "DynamicScreen\\Microsoft\\": "src/"
+        }
+    }
+}

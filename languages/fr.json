@@ -1,0 +1,41 @@
+{
+  "app": {
+    "name": "Office 365",
+    "description": "Affichez et utilisez vos documents Office 365",
+    "author": {
+      "name": "DynamicScreen",
+      "email": "bonjour@dynamicscreen.com"
+    }
+  },
+  "privileges": {
+    "needs_account": {
+      "unsplash": {
+        "why": "Nous utilisons votre compte microsoft pour vous connecter et afficher vos dernières informations."
+      }
+    }
+  },
+  "modules": {
+    "powerpoint": {
+      "name": "PowerPoint",
+      "description": "Affiche les présentations PowerPoint",
+      "options": {},
+      "slide": {}
+    },
+    "word": {
+      "name": "Word",
+      "description": "Affiche les documents Word",
+      "options": {},
+      "slide": {}
+    },
+    "excel": {
+      "name": "Excel",
+      "description": "Affiche les tableurs Excel",
+      "options": {},
+      "slide": {}
+    },
+    "microsoft-driver": {
+      "name": "Microsoft Driver",
+      "description": "Permet la connexion avec l'API de microsoft."
+    }
+  }
+}

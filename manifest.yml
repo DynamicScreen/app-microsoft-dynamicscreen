@@ -1,0 +1,83 @@
+# YAML
+id: app-microsoft-dynamicscreen
+name: app.name
+description: app.description
+logo: fa fa-microsoft
+version: 0.8.0
+channel: stable
+api-level: 1
+color: blue
+author:
+    name: DynamicScreen
+    email: bonjour@dynamicscreen.com
+privileges:
+    needs_account:
+        -   identifier: microsoft-driver
+            type: microsoft
+            why: privileges.needs_account.microsoft.why
+modules:
+    -   name: modules.microsoft-driver.name
+        logo: fa fa-microsoft
+        description: modules.microsoft-driver.description
+        identifier: microsoft-driver
+        color: red
+        type: auth-provider
+        options:
+            provider: microsoft
+            vue:
+                component: src/MicrosoftDriver/MicrosoftDriverOptions.ts
+            php:
+                handler: \DynamicScreen\Microsoft\MicrosoftDriver\MicrosoftAuthProviderHandler
+            node:
+                handler: src/handler.js
+    -   name: modules.powerpoint.name
+        logo: fa fa-file-powerpoint
+        identifier: microsoft-powerpoint
+        color: red
+        type: slide
+        description: modules.powerpoint.description
+        options:
+            privileges:
+                needs_account:
+                    - microsoft-driver
+            vue:
+                component: src/PowerPoint/PowerPoint.ts
+                options: src/PowerPoint/PowerPointOptions.ts
+            php:
+                handler: \DynamicScreen\Microsoft\PowerPoint\PowerPointSlideHandler
+            node:
+                handler: src/handler.js
+    -   name: modules.excel.name
+          logo: fa fa-file-excel
+          identifier: microsoft-excel
+          color: green
+          type: slide
+          description: modules.excel.description
+          options:
+            privileges:
+              needs_account:
+                - microsoft-driver
+            vue:
+              component: src/Excel/Excel.ts
+              options: src/Excel/ExcelOptions.ts
+            php:
+              handler: \DynamicScreen\Microsoft\Excel\ExcelSlideHandler
+            node:
+              handler: src/handler.js
+    -   name: modules.word.name
+          logo: fa fa-file-word
+          identifier: microsoft-word
+          color: blue
+          type: slide
+          description: modules.word.description
+          options:
+            privileges:
+              needs_account:
+                - microsoft-driver
+            vue:
+              component: src/Word/Word.ts
+              options: src/Word/WordOptions.ts
+            php:
+              handler: \DynamicScreen\Microsoft\Word\WordSlideHandler
+            node:
+              handler: src/handler.js
