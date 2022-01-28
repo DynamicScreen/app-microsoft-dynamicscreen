@@ -30,6 +30,7 @@ modules:
                 handler: \DynamicScreen\Microsoft\MicrosoftDriver\MicrosoftAuthProviderHandler
             node:
                 handler: src/handler.js
+
     -   name: modules.powerpoint.name
         logo: fa fa-file-powerpoint
         identifier: microsoft-powerpoint
@@ -47,6 +48,7 @@ modules:
                 handler: \DynamicScreen\Microsoft\PowerPoint\PowerPointSlideHandler
             node:
                 handler: src/handler.js
+
     -   name: modules.excel.name
           logo: fa fa-file-excel
           identifier: microsoft-excel
@@ -64,6 +66,7 @@ modules:
               handler: \DynamicScreen\Microsoft\Excel\ExcelSlideHandler
             node:
               handler: src/handler.js
+
     -   name: modules.word.name
           logo: fa fa-file-word
           identifier: microsoft-word
