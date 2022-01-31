@@ -13,10 +13,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Dynamicscreen/app-today-dynamicscreen.git"
+    "url": "git+https://github.com/Dynamicscreen/app-microsoft-dynamicscreen.git"
   },
   "bugs": {
-    "url": "https://github.com/Dynamicscreen/app-today-dynamicscreen/issues"
+    "url": "https://github.com/Dynamicscreen/app-microsoft-dynamicscreen/issues"
   },
-  "homepage": "https://github.com/Dynamicscreen/app-today-dynamicscreen#readme"
+  "homepage": "https://github.com/Dynamicscreen/app-microsoft-dynamicscreen#readme"
 }

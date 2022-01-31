@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Session;
 use DynamicScreen\SdkPhp\Handlers\OAuthProviderHandler;
 use Microsoft\Graph\Graph;
 
-class MicrosoftAuthProvider extends OAuthProviderHandler
+class MicrosoftAuthProviderHandler extends OAuthProviderHandler
 {
     protected static string $provider = 'microsoft';
 
@@ -62,6 +62,7 @@ class MicrosoftAuthProvider extends OAuthProviderHandler
         } catch (\Exception $e) {
             dd('Error in callback microsoft driver', $e);
         }
+
 
         $data = $this->processOptions($options);
         $dataStr = json_encode($data);
