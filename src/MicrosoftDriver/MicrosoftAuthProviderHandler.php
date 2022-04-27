@@ -104,6 +104,7 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
             // And we request the Graph to get the Sharepoint URL
             $graph = new Graph();
             $graph->setAccessToken($auth["access_token"]);
+
             $success = true;
 
             try {
@@ -141,6 +142,7 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
                     'urlAuthorize'   => "https://login.microsoftonline.com/" . $tenantId . config('azure.AUTHORIZE_ENDPOINT'),
                     'urlAccessToken' => "https://login.microsoftonline.com/" . $tenantId . config('azure.TOKEN_ENDPOINT'),
                     'scopes'         => implode(" ", $scopes),
+                    "state"          => $state,
                 ]);
 
                 $authUrl = $oauthClient->getAuthorizationUrl();
