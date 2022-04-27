@@ -18,6 +18,33 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
         parent::__construct($module, $config);
     }
 
+    public function getScopes()
+    {
+        return [
+            "openid",
+            "profile",
+            "offline_access",
+            "user.read",
+            "mailboxsettings.read",
+            "calendars.readwrite",
+            "files.readwrite.all",
+            "sites.readwrite.all",
+        ];
+    }
+
+    public function getOAuthClient(array $overwrite = [])
+    {
+        return new \League\OAuth2\Client\Provider\GenericProvider(array_merge([
+            'clientId'                => config('azure.APP_ID'),
+            'clientSecret'            => config('azure.APP_SECRET'),
+            'redirectUri'             => route('api.oauth.callback'),
+            'urlAuthorize'            => config('azure.AUTHORITY') . config('azure.AUTHORIZE_ENDPOINT'),
+            'urlAccessToken'          => config('azure.AUTHORITY') . config('azure.TOKEN_ENDPOINT'),
+            'urlResourceOwnerDetails' => '',
+            'scopes'                  => implode(" ", $this->getScopes()),
+        ], $overwrite));
+    }
+
     public function testConnection($config = null)
     {
         $config = $config ?? $this->default_config;
@@ -40,6 +67,7 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
 
         $oauthState = $oauthClient->getState();
         Session::put($oauthState, $data);
+        Session::put("${$oauthState}_step", 1);
 
         return $authUrl;
 
@@ -47,9 +75,76 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
 
     public function callback($request, $redirectUrl = null)
     {
+        $state = $request->get('state');
         abort_unless(Session::has($request->get('state')), 400, 'No state');
-        $state = Session::get($request->get('state'));
-        Session::forget($request->get('state'));
+        $stateData = Session::get($request->get('state'));
+        $step = Session::get($request->get('state') . "_step", 1);
+
+        logs()->info("Microsoft callback, step: " . $step);
+
+        if ($step === 1) {
+            // Step 1 : We authenticated using the "public" authority, now we can use the Microsoft Graph
+            // to find the Sharepoint URL and make a new authentication process using Sharepoint tenant
+
+            // First, we get the access token from the auth code we just got
+            $authCode = $request->get('code');
+            abort_unless($authCode, 400, 'No code');
+
+            $oauthClient = $this->getOAuthClient();
+
+            try {
+                $auth = $oauthClient->getAccessToken('authorization_code', [ 'code' => $authCode ])->jsonSerialize();
+            } catch (\Exception $e) {
+                dd('Error in callback microsoft driver', $e);
+            }
+
+            logs()->info("Got Access token");
+
+            // And we request the Graph to get the Sharepoint URL
+            $graph = new Graph();
+            $graph->setAccessToken($auth["access_token"]);
+            $success = true;
+
+            try {
+                $sitesResponse = $graph->createRequest('GET', "/sites/root")->execute();
+                logs()->info("Sharepoint Sites request status: " . $sitesResponse->getStatus());
+            } catch (\Exception $ex) {
+                // We can't get the Sharepoint URL, we skip
+                logs()->info("Failed to get Sharepoint");
+                $success = false;
+            }
+
+            if ($success && $sitesResponse->getStatus() == 200) {
+                $sites = $sitesResponse->getBody();
+                logs()->info("Sites response: " . json_encode($sites));
+
+                $tenantUrl = Arr::get($sites, "webUrl");
+                Session::put($state . "_tenant", $tenantUrl);
+
+                $scopes = [
+                    ...$this->getScopes(),
+//                    $tenantUrl . "/.default"
+                    $tenantUrl . "/AllSites.Read",
+                    $tenantUrl . "/MyFiles.Read",
+                ];
+
+                $oauthClient = $this->getOAuthClient([
+                    'urlAuthorize'            => $tenantUrl . config('azure.AUTHORIZE_ENDPOINT'),
+                    'urlAccessToken'          => $tenantUrl . config('azure.TOKEN_ENDPOINT'),
+                    'scopes'                  => implode(" ", $scopes),
+                ]);
+
+                $authUrl = $oauthClient->getAuthorizationUrl();
+                Session::put($state . "_step", 2);
+
+                logs()->info("Redirecting to: " . $authUrl);
+
+                return redirect()->away($authUrl);
+            }
+
+        }
+
+        // Step 2
 
         $authCode = $request->get('code');
         abort_unless($authCode, 400, 'No code');
@@ -57,17 +152,24 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
         $oauthClient = $this->getOAuthClient();
 
         try {
-            $options = $oauthClient->getAccessToken('authorization_code', ['code' => $authCode])->jsonSerialize();
-            $options = array_merge($options, ['deltaLinks' => [$this->getNewPersonalDeltaLink($options)]]);
+            $options = $oauthClient->getAccessToken('authorization_code', [ 'code' => $authCode ])->jsonSerialize();
+            $options = array_merge($options, [ 'deltaLinks' => [ $this->getNewPersonalDeltaLink($options) ] ]);
         } catch (\Exception $e) {
             dd('Error in callback microsoft driver', $e);
         }
 
+        if (Session::has($state . "_tenant")) {
+            $options["tenant_url"] = Session::get($state . "_tenant");
+            logs()->info("Retrieved tenant from session: " . $options["tenant_url"]);
+            Session::forget($state . "_tenant");
+        }
 
+        Session::forget($state);
+        Session::forget($state . "_step");
         $data = $this->processOptions($options);
         $dataStr = json_encode($data);
 
-        return redirect()->away($redirectUrl ."&data=$dataStr");
+        return redirect()->away($redirectUrl . "&data=$dataStr");
     }
 
     public function getUserInfos($config = null)
@@ -89,7 +191,7 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
             $graph->setAccessToken(Arr::get($config, 'access_token'));
 
             $endpoint = "/drive/items/$file_id";
-            if($site_id) {
+            if ($site_id) {
                 $endpoint = "/sites/$site_id" . $endpoint;
             } else {
                 $endpoint = "/me$endpoint";
@@ -111,7 +213,7 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
 
             return $graph->createRequest('GET', '/sites?search=*')->execute()->getBody()['value'];
 
-        } catch(\Exception $e) {
+        } catch (\Exception $e) {
             return false;
         }
 
@@ -131,7 +233,7 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
 
             return 'data:' . $meta["@odata.mediaContentType"] . ';base64,' . base64_encode($photo);
 
-        } catch(\Exception $e) {
+        } catch (\Exception $e) {
             return false;
         }
     }
@@ -169,17 +271,17 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
 
         $deltaLinks = Arr::get($config, 'deltaLinks');
 
-        if(empty($deltaLinks)) {
+        if (empty($deltaLinks)) {
             return false;
         }
 
         $files_changes = collect();
 
-        foreach($deltaLinks as $delta) {
+        foreach ($deltaLinks as $delta) {
             try {
                 $resp = $graph->createRequest('GET', $delta)->execute()->getBody();
                 $files_changes = $files_changes->merge(collect($resp['value'])->pluck('id'));
-            } catch(\Exception $e) {
+            } catch (\Exception $e) {
                 continue;
             }
         }
@@ -195,7 +297,7 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
         $graph->setAccessToken(Arr::get($config, 'access_token'));
 
         $endpoint = "drive/items/$file_id/content?format=pdf";
-        if(empty($site_id)) {
+        if (empty($site_id)) {
             $endpoint = "/me/$endpoint";
         } else {
             $endpoint = "/sites/$site_id/$endpoint";
@@ -204,25 +306,13 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
         return $graph->createRequest('GET', $endpoint)->execute()->getRawBody();
     }
 
-    public function refreshToken($config = null): array
+    public function refreshToken($config = null) : array
     {
         $config = $config ?? $this->default_config;
 
         $oauthClient = $this->getOAuthClient();
 
-        return array_merge($config, $oauthClient->getAccessToken('refresh_token', ['refresh_token' => Arr::get($config, 'refresh_token')])->jsonSerialize());
-    }
-
-    public function getOAuthClient()
-    {
-        return new \League\OAuth2\Client\Provider\GenericProvider([
-            'clientId'                => config('azure.APP_ID'),
-            'clientSecret'            => config('azure.APP_SECRET'),
-            'redirectUri'             => route('api.oauth.callback'),
-            'urlAuthorize'            => config('azure.AUTHORITY').config('azure.AUTHORIZE_ENDPOINT'),
-            'urlAccessToken'          => config('azure.AUTHORITY').config('azure.TOKEN_ENDPOINT'),
-            'urlResourceOwnerDetails' => '',
-            'scopes'                  => 'openid profile offline_access user.read mailboxsettings.read calendars.readwrite files.readwrite.all sites.readwrite.all'
-        ]);
+        return array_merge($config, $oauthClient->getAccessToken('refresh_token', [ 'refresh_token' => Arr::get($config, 'refresh_token') ])
+                                                ->jsonSerialize());
     }
 }
