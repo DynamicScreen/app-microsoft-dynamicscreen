@@ -80,6 +80,7 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
         $stateData = Session::get($request->get('state'));
         $step = Session::get($request->get('state') . "_step", 1);
 
+        logs()->info("=========================");
         logs()->info("Microsoft callback, step: " . $step);
 
         if ($step === 1) {
@@ -108,30 +109,38 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
             try {
                 $sitesResponse = $graph->createRequest('GET', "/sites/root")->execute();
                 logs()->info("Sharepoint Sites request status: " . $sitesResponse->getStatus());
+                $orgResponse = $graph->createRequest('GET', "/organization")->execute();
+                logs()->info("Organization request status: " . $sitesResponse->getStatus());
             } catch (\Exception $ex) {
                 // We can't get the Sharepoint URL, we skip
                 logs()->info("Failed to get Sharepoint");
                 $success = false;
             }
 
-            if ($success && $sitesResponse->getStatus() == 200) {
+            logs()->info("Fetch success: " . $success);
+
+            if ($success && $sitesResponse->getStatus() == 200 && $orgResponse->getStatus() == 200) {
                 $sites = $sitesResponse->getBody();
                 logs()->info("Sites response: " . json_encode($sites));
+                $orgs = $orgResponse->getBody();
+
+                $tenantId = Arr::get($orgs, "value.0.id");
+                Session::put($state . "_tenant_id", $tenantId);
 
                 $tenantUrl = Arr::get($sites, "webUrl");
-                Session::put($state . "_tenant", $tenantUrl);
+                Session::put($state . "_tenant_url", $tenantUrl);
 
                 $scopes = [
                     ...$this->getScopes(),
-//                    $tenantUrl . "/.default"
+                    //                    $tenantUrl . "/.default"
                     $tenantUrl . "/AllSites.Read",
                     $tenantUrl . "/MyFiles.Read",
                 ];
 
                 $oauthClient = $this->getOAuthClient([
-                    'urlAuthorize'            => $tenantUrl . config('azure.AUTHORIZE_ENDPOINT'),
-                    'urlAccessToken'          => $tenantUrl . config('azure.TOKEN_ENDPOINT'),
-                    'scopes'                  => implode(" ", $scopes),
+                    'urlAuthorize'   => "https://login.microsoftonline.com/" . $tenantId . config('azure.AUTHORIZE_ENDPOINT'),
+                    'urlAccessToken' => "https://login.microsoftonline.com/" . $tenantId . config('azure.TOKEN_ENDPOINT'),
+                    'scopes'         => implode(" ", $scopes),
                 ]);
 
                 $authUrl = $oauthClient->getAuthorizationUrl();
@@ -146,6 +155,8 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
 
         // Step 2
 
+        logs()->info("Step 2");
+
         $authCode = $request->get('code');
         abort_unless($authCode, 400, 'No code');
 
@@ -158,10 +169,15 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
             dd('Error in callback microsoft driver', $e);
         }
 
-        if (Session::has($state . "_tenant")) {
-            $options["tenant_url"] = Session::get($state . "_tenant");
+        if (Session::has($state . "_tenant_url")) {
+            $options["tenant_url"] = Session::get($state . "_tenant_url");
             logs()->info("Retrieved tenant from session: " . $options["tenant_url"]);
-            Session::forget($state . "_tenant");
+            Session::forget($state . "_tenant_url");
+        }
+        if (Session::has($state . "_tenant_id")) {
+            $options["tenant_id"] = Session::get($state . "_tenant_id");
+            logs()->info("Retrieved tenant from session: " . $options["tenant_id"]);
+            Session::forget($state . "_tenant_id");
         }
 
         Session::forget($state);
