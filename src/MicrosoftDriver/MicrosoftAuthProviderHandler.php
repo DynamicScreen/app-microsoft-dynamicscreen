@@ -67,7 +67,7 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
 
         $oauthState = $oauthClient->getState();
         Session::put($oauthState, $data);
-        Session::put("${$oauthState}_step", 1);
+        Session::put("{$oauthState}_step", 1);
 
         return $authUrl;
 
