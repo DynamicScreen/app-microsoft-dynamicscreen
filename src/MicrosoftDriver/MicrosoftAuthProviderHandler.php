@@ -76,11 +76,12 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
     public function callback($request, $redirectUrl = null)
     {
         $state = $request->get('state');
+        logs()->info("=========================");
+        logs()->info("State: " . $state);
         abort_unless(Session::has($request->get('state')), 400, 'No state');
         $stateData = Session::get($request->get('state'));
         $step = Session::get($request->get('state') . "_step", 1);
 
-        logs()->info("=========================");
         logs()->info("Microsoft callback, step: " . $step);
 
         if ($step === 1) {
@@ -142,11 +143,16 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
                     'urlAuthorize'   => "https://login.microsoftonline.com/" . $tenantId . config('azure.AUTHORIZE_ENDPOINT'),
                     'urlAccessToken' => "https://login.microsoftonline.com/" . $tenantId . config('azure.TOKEN_ENDPOINT'),
                     'scopes'         => implode(" ", $scopes),
-                    "state"          => $state,
                 ]);
 
+                $newState = $oauthClient->getState();
+
+
                 $authUrl = $oauthClient->getAuthorizationUrl();
-                Session::put($state . "_step", 2);
+                Session::put($newState, Session::get($state));
+                Session::put($newState . "_tenant_id", Session::get($state . "_tenant_id"));
+                Session::put($newState . "_tenant_url", Session::get($state . "_tenant_url"));
+                Session::put($newState . "_step", 2);
 
                 logs()->info("Redirecting to: " . $authUrl);
 
