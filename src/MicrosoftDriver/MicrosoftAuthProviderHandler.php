@@ -145,14 +145,16 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
                     'scopes'         => implode(" ", $scopes),
                 ]);
 
-                $newState = $oauthClient->getState();
-
-
                 $authUrl = $oauthClient->getAuthorizationUrl();
+
+                $newState = $oauthClient->getState();
+                logs()->info("New state: " . $newState);
+
                 Session::put($newState, Session::get($state));
                 Session::put($newState . "_tenant_id", Session::get($state . "_tenant_id"));
                 Session::put($newState . "_tenant_url", Session::get($state . "_tenant_url"));
                 Session::put($newState . "_step", 2);
+                Session::put($newState . "_scopes", implode(" ", $scopes));
 
                 logs()->info("Redirecting to: " . $authUrl);
 
