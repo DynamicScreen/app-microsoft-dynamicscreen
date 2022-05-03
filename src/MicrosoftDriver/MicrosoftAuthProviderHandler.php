@@ -134,9 +134,9 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
 
                 $scopes = [
                     ...$this->getScopes(),
-                    //                    $tenantUrl . "/.default"
-                    $tenantUrl . "/AllSites.Read",
-                    $tenantUrl . "/MyFiles.Read",
+                    $tenantUrl . "/.default"
+                    //                    $tenantUrl . "/AllSites.Read",
+                    //                    $tenantUrl . "/MyFiles.Read",
                 ];
 
                 $oauthClient = $this->getOAuthClient([
