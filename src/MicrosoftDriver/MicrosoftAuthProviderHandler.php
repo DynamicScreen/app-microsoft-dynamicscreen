@@ -45,6 +45,22 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
         ], $overwrite));
     }
 
+    public function getSharepointOAuthClient($tenantId, $tenantUrl, array $overwrite = [])
+    {
+        $scopes = [
+            ...$this->getScopes(),
+            $tenantUrl . "/.default"
+            //                    $tenantUrl . "/AllSites.Read",
+            //                    $tenantUrl . "/MyFiles.Read",
+        ];
+
+        return $this->getOAuthClient(array_merge([
+            'urlAuthorize'   => "https://login.microsoftonline.com/" . $tenantId . config('azure.AUTHORIZE_ENDPOINT'),
+            'urlAccessToken' => "https://login.microsoftonline.com/" . $tenantId . config('azure.TOKEN_ENDPOINT'),
+            'scopes'         => implode(" ", $scopes),
+        ], $overwrite));
+    }
+
     public function testConnection($config = null)
     {
         $config = $config ?? $this->default_config;
@@ -96,11 +112,11 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
 
             try {
                 $auth = $oauthClient->getAccessToken('authorization_code', [ 'code' => $authCode ])->jsonSerialize();
+                $auth = array_merge($auth, [ 'deltaLinks' => [ $this->getNewPersonalDeltaLink($auth) ] ]);
             } catch (\Exception $e) {
                 dd('Error in callback microsoft driver', $e);
             }
 
-            logs()->info("Got Access token");
 
             // And we request the Graph to get the Sharepoint URL
             $graph = new Graph();
@@ -113,6 +129,8 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
                 logs()->info("Sharepoint Sites request status: " . $sitesResponse->getStatus());
                 $orgResponse = $graph->createRequest('GET', "/organization")->execute();
                 logs()->info("Organization request status: " . $sitesResponse->getStatus());
+                $drivesResponse = $graph->createRequest('GET', "/me/drives")->execute();
+                logs()->info("Drives request status: " . $drivesResponse->getStatus());
             } catch (\Exception $ex) {
                 // We can't get the Sharepoint URL, we skip
                 logs()->info("Failed to get Sharepoint");
@@ -121,10 +139,11 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
 
             logs()->info("Fetch success: " . $success);
 
-            if ($success && $sitesResponse->getStatus() == 200 && $orgResponse->getStatus() == 200) {
+            if ($success && $sitesResponse->getStatus() == 200 && $orgResponse->getStatus() == 200 && $drivesResponse->getStatus() == 200) {
                 $sites = $sitesResponse->getBody();
                 logs()->info("Sites response: " . json_encode($sites));
                 $orgs = $orgResponse->getBody();
+                $drives = $drivesResponse->getBody();
 
                 $tenantId = Arr::get($orgs, "value.0.id");
                 Session::put($state . "_tenant_id", $tenantId);
@@ -132,18 +151,10 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
                 $tenantUrl = Arr::get($sites, "webUrl");
                 Session::put($state . "_tenant_url", $tenantUrl);
 
-                $scopes = [
-                    ...$this->getScopes(),
-                    $tenantUrl . "/.default"
-                    //                    $tenantUrl . "/AllSites.Read",
-                    //                    $tenantUrl . "/MyFiles.Read",
-                ];
+                $drives = collect(Arr::get($drives, "value"))->only("id", "name", "webUrl");
+                Session::put($state . "_drives", $drives);
 
-                $oauthClient = $this->getOAuthClient([
-                    'urlAuthorize'   => "https://login.microsoftonline.com/" . $tenantId . config('azure.AUTHORIZE_ENDPOINT'),
-                    'urlAccessToken' => "https://login.microsoftonline.com/" . $tenantId . config('azure.TOKEN_ENDPOINT'),
-                    'scopes'         => implode(" ", $scopes),
-                ]);
+                $oauthClient = $this->getSharepointOAuthClient($tenantId, $tenantUrl);
 
                 $authUrl = $oauthClient->getAuthorizationUrl();
 
@@ -153,8 +164,10 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
                 Session::put($newState, Session::get($state));
                 Session::put($newState . "_tenant_id", Session::get($state . "_tenant_id"));
                 Session::put($newState . "_tenant_url", Session::get($state . "_tenant_url"));
+                Session::put($newState . "_drives", Session::get($state . "_drives"));
                 Session::put($newState . "_step", 2);
                 Session::put($newState . "_scopes", implode(" ", $scopes));
+                Session::put($newState . "_auth", $auth);
 
                 logs()->info("Redirecting to: " . $authUrl);
 
@@ -170,24 +183,39 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
         $authCode = $request->get('code');
         abort_unless($authCode, 400, 'No code');
 
-        $oauthClient = $this->getOAuthClient();
+        if (Session::has($state . "_tenant_id") && Session::has($state . "_tenant_url")) {
+            $tenantId = Session::get($state . "_tenant_id");
+            $tenantUrl = Session::get($state . "_tenant_url");
+            $oauthClient = $this->getSharepointOAuthClient($tenantId, $tenantUrl);
 
-        try {
-            $options = $oauthClient->getAccessToken('authorization_code', [ 'code' => $authCode ])->jsonSerialize();
-            $options = array_merge($options, [ 'deltaLinks' => [ $this->getNewPersonalDeltaLink($options) ] ]);
-        } catch (\Exception $e) {
-            dd('Error in callback microsoft driver', $e);
-        }
+            try {
+                $options = Session::get("{$state}_auth");
+                $auth = $oauthClient->getAccessToken('authorization_code', [ 'code' => $authCode ])->jsonSerialize();
+                $auth = array_merge($auth, [ 'deltaLinks' => [ $this->getNewPersonalDeltaLink($options) ] ]);
+                $options["sharepoint"] = $auth;
 
-        if (Session::has($state . "_tenant_url")) {
-            $options["tenant_url"] = Session::get($state . "_tenant_url");
-            logs()->info("Retrieved tenant from session: " . $options["tenant_url"]);
-            Session::forget($state . "_tenant_url");
-        }
-        if (Session::has($state . "_tenant_id")) {
-            $options["tenant_id"] = Session::get($state . "_tenant_id");
-            logs()->info("Retrieved tenant from session: " . $options["tenant_id"]);
-            Session::forget($state . "_tenant_id");
+                $options["sharepoint"]["tenant_url"] = $tenantUrl;
+                logs()->info("Retrieved tenant URL from session: " . $options["sharepoint"]["tenant_url"]);
+                Session::forget($state . "_tenant_url");
+
+                $options["sharepoint"]["tenant_id"] = $tenantUrl;
+                logs()->info("Retrieved tenant ID from session: " . $options["sharepoint"]["tenant_id"]);
+                Session::forget($state . "_tenant_id");
+
+                $options["sharepoint"]["drives"] = Session::get($state . "_drives");
+                Session::forget($state . "_drives");
+            } catch (\Exception $e) {
+                dd('Error in callback microsoft driver', $e);
+            }
+        } else {
+            $oauthClient = $this->getOAuthClient();
+
+            try {
+                $options = $oauthClient->getAccessToken('authorization_code', [ 'code' => $authCode ])->jsonSerialize();
+                $options = array_merge($options, [ 'deltaLinks' => [ $this->getNewPersonalDeltaLink($options) ] ]);
+            } catch (\Exception $e) {
+                dd('Error in callback microsoft driver', $e);
+            }
         }
 
         Session::forget($state);
