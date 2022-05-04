@@ -5,6 +5,7 @@ namespace DynamicScreen\Microsoft\MicrosoftDriver;
 
 use DynamicScreen\SdkPhp\Interfaces\IModule;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Session;
 use DynamicScreen\SdkPhp\Handlers\OAuthProviderHandler;
 use Microsoft\Graph\Graph;
@@ -32,6 +33,13 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
         ];
     }
 
+    public function getSharepointScopes()
+    {
+        return [
+            ".default",
+        ];
+    }
+
     public function getOAuthClient(array $overwrite = [])
     {
         return new \League\OAuth2\Client\Provider\GenericProvider(array_merge([
@@ -47,17 +55,12 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
 
     public function getSharepointOAuthClient($tenantId, $tenantUrl, array $overwrite = [])
     {
-        $scopes = [
-            ...$this->getScopes(),
-            $tenantUrl . "/.default"
-            //                    $tenantUrl . "/AllSites.Read",
-            //                    $tenantUrl . "/MyFiles.Read",
-        ];
-
         return $this->getOAuthClient(array_merge([
             'urlAuthorize'   => "https://login.microsoftonline.com/" . $tenantId . config('azure.AUTHORIZE_ENDPOINT'),
             'urlAccessToken' => "https://login.microsoftonline.com/" . $tenantId . config('azure.TOKEN_ENDPOINT'),
-            'scopes'         => implode(" ", $scopes),
+            'scopes'         => collect($this->getSharepointScopes())
+                ->map(fn ($scope) => \Str::finish($tenantUrl, "/") . $scope)
+                ->implode(" "),
         ], $overwrite));
     }
 
