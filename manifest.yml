@@ -3,7 +3,7 @@ id: app-microsoft-dynamicscreen
 name: app.name
 description: app.description
 logo: fab fa-microsoft
-version: 0.8.5
+version: 0.8.6
 channel: stable
 api-level: 1
 color: blue

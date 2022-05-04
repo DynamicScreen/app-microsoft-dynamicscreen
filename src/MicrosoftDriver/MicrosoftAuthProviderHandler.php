@@ -166,7 +166,7 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
                 Session::put($newState . "_tenant_url", Session::get($state . "_tenant_url"));
                 Session::put($newState . "_drives", Session::get($state . "_drives"));
                 Session::put($newState . "_step", 2);
-                Session::put($newState . "_scopes", implode(" ", $scopes));
+//                Session::put($newState . "_scopes", implode(" ", $scopes));
                 Session::put($newState . "_auth", $auth);
 
                 logs()->info("Redirecting to: " . $authUrl);
