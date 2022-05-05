@@ -149,7 +149,7 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
                 $sites = $sitesResponse->getBody();
                 logs()->info("Sites response: " . json_encode($sites));
                 $orgs = $orgResponse->getBody();
-                $drives = $drivesResponse->getBody();
+                $oneDrives = $drivesResponse->getBody();
 
                 $tenantId = Arr::get($orgs, "value.0.id");
                 Session::put($state . "_tenant_id", $tenantId);
@@ -162,7 +162,7 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
                 Session::put($state . "_tenant_url", $tenantUrl);
 
                 $drives = [];
-                foreach (Arr::get($drives, "value") as $drive) {
+                foreach (Arr::get($oneDrives, "value", []) as $drive) {
                     $url = $drive["webUrl"];
                     $urls[] = $url;
                     $urlinfo = parse_url($url);
