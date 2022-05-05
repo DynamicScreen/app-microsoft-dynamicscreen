@@ -154,14 +154,11 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
                 $tenantId = Arr::get($orgs, "value.0.id");
                 Session::put($state . "_tenant_id", $tenantId);
 
-                $urls = [];
                 $tenantUrl = Arr::get($sites, "webUrl");
-                if ($tenantUrl) {
-                    $urls[] = $tenantUrl;
-                }
                 Session::put($state . "_tenant_url", $tenantUrl);
 
                 $drives = [];
+                $personalUrl = null;
                 foreach (Arr::get($oneDrives, "value", []) as $drive) {
                     $url = $drive["webUrl"];
                     $urlinfo = parse_url($url);
@@ -173,11 +170,11 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
                         "domain" => $urlinfo["host"],
                         "path" => $pathinfo["dirname"],
                     ];
-                    $urls[] = "https://" . $urlinfo["host"];
+                    $personalUrl ="https://" . $urlinfo["host"];
                 }
                 Session::put($state . "_drives", $drives);
 
-                $oauthClient = $this->getSharepointOAuthClient($tenantId, $urls);
+                $oauthClient = $this->getSharepointOAuthClient($tenantId, $tenantUrl);
 
                 $authUrl = $oauthClient->getAuthorizationUrl();
 
@@ -187,6 +184,7 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
                 Session::put($newState, Session::get($state));
                 Session::put($newState . "_tenant_id", Session::get($state . "_tenant_id"));
                 Session::put($newState . "_tenant_url", Session::get($state . "_tenant_url"));
+                Session::put($newState . "_personal_url", $personalUrl);
                 Session::put($newState . "_drives", Session::get($state . "_drives"));
                 Session::put($newState . "_step", 2);
 //                Session::put($newState . "_scopes", implode(" ", $scopes));
@@ -197,48 +195,93 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
                 return redirect()->away($authUrl);
             }
 
+        } else if ($step === 2) {
+            logs()->info("Step 2");
+            $options = Session::get("{$state}_auth");
+
+            if (Session::has($state . "_tenant_id") && Session::has($state . "_tenant_url")) {
+                $tenantId = Session::get($state . "_tenant_id");
+                $tenantUrl = Session::get($state . "_tenant_url");
+                $personalUrl = Session::get($state . "_personal_url");
+                $oauthClient = $this->getSharepointOAuthClient($tenantId, $tenantUrl);
+
+                try {
+                    $authCode = $request->get('code');
+                    abort_unless($authCode, 400, 'No code');
+
+                    $auth = $oauthClient->getAccessToken('authorization_code', [ 'code' => $authCode ])
+                                        ->jsonSerialize();
+                    $auth = array_merge($auth, [ 'deltaLinks' => [ $this->getNewPersonalDeltaLink($options) ] ]);
+                    $options["sharepoint"] = $auth;
+
+                    $options["sharepoint"]["tenant_url"] = $tenantUrl;
+                    logs()->info("Retrieved tenant URL from session: " . $tenantUrl);
+
+                    $options["sharepoint"]["tenant_id"] = $tenantId;
+                    logs()->info("Retrieved tenant ID from session: " . $tenantId);
+
+                    $options["sharepoint"]["drives"] = Session::get($state . "_drives");
+
+                    if ($personalUrl) {
+                        // We have to go to step 3 for Personal SharePoint
+                        logs()->info("Need to authenticate on: " . $personalUrl);
+                        $oauthClient = $this->getSharepointOAuthClient($tenantId, $personalUrl);
+
+                        $authUrl = $oauthClient->getAuthorizationUrl();
+
+                        $newState = $oauthClient->getState();
+                        logs()->info("New state: " . $newState);
+
+                        Session::put($newState, Session::get($state));
+                        Session::put($newState . "_tenant_id", Session::get($state . "_tenant_id"));
+                        Session::put($newState . "_tenant_url", Session::get($state . "_tenant_url"));
+                        Session::put($newState . "_personal_url", $personalUrl);
+                        Session::put($newState . "_drives", Session::get($state . "_drives"));
+                        Session::put($newState . "_step", 3);
+//                Session::put($newState . "_scopes", implode(" ", $scopes));
+                        Session::put($newState . "_auth", $options);
+
+                        logs()->info("Redirecting to: " . $authUrl);
+
+                        return redirect()->away($authUrl);
+                    }
+
+                    Session::forget($state . "_tenant_id");
+                    Session::forget($state . "_drives");
+                    Session::forget($state . "_tenant_url");
+                } catch (\Exception $e) {
+                    dd('Error in callback microsoft driver', $e);
+                }
+            }
+
+        } else if ($step === 3) {
+            // Third step : We authenticate using "SharePoint Personal" scopes (-my)
+
+            $options = Session::get("{$state}_auth");
+            $authCode = $request->get('code');
+            abort_unless($authCode, 400, 'No code');
+
+            $tenantId = Session::get($state . "_tenant_id");
+            $personalUrl = Session::get($state . "_personal_url");
+            $oauthClient = $this->getSharepointOAuthClient($tenantId, $personalUrl);
+            
+            $auth = $oauthClient->getAccessToken('authorization_code', [ 'code' => $authCode ])
+                                ->jsonSerialize();
+            $auth = array_merge($auth, [ 'deltaLinks' => [ $this->getNewPersonalDeltaLink($options) ] ]);
+            $options["PersonalSharePoint"] = $auth;
         }
 
-        // Step 2
-
-        logs()->info("Step 2");
 
         $authCode = $request->get('code');
         abort_unless($authCode, 400, 'No code');
 
-        if (Session::has($state . "_tenant_id") && Session::has($state . "_tenant_url")) {
-            $tenantId = Session::get($state . "_tenant_id");
-            $tenantUrl = Session::get($state . "_tenant_url");
-            $oauthClient = $this->getSharepointOAuthClient($tenantId, $tenantUrl);
+        $oauthClient = $this->getOAuthClient();
 
-            try {
-                $options = Session::get("{$state}_auth");
-                $auth = $oauthClient->getAccessToken('authorization_code', [ 'code' => $authCode ])->jsonSerialize();
-                $auth = array_merge($auth, [ 'deltaLinks' => [ $this->getNewPersonalDeltaLink($options) ] ]);
-                $options["sharepoint"] = $auth;
-
-                $options["sharepoint"]["tenant_url"] = $tenantUrl;
-                logs()->info("Retrieved tenant URL from session: " . $tenantUrl);
-                Session::forget($state . "_tenant_url");
-
-                $options["sharepoint"]["tenant_id"] = $tenantId;
-                logs()->info("Retrieved tenant ID from session: " . $tenantId);
-                Session::forget($state . "_tenant_id");
-
-                $options["sharepoint"]["drives"] = Session::get($state . "_drives");
-                Session::forget($state . "_drives");
-            } catch (\Exception $e) {
-                dd('Error in callback microsoft driver', $e);
-            }
-        } else {
-            $oauthClient = $this->getOAuthClient();
-
-            try {
-                $options = $oauthClient->getAccessToken('authorization_code', [ 'code' => $authCode ])->jsonSerialize();
-                $options = array_merge($options, [ 'deltaLinks' => [ $this->getNewPersonalDeltaLink($options) ] ]);
-            } catch (\Exception $e) {
-                dd('Error in callback microsoft driver', $e);
-            }
+        try {
+            $options = $oauthClient->getAccessToken('authorization_code', [ 'code' => $authCode ])->jsonSerialize();
+            $options = array_merge($options, [ 'deltaLinks' => [ $this->getNewPersonalDeltaLink($options) ] ]);
+        } catch (\Exception $e) {
+            dd('Error in callback microsoft driver', $e);
         }
 
         Session::forget($state);
