@@ -164,7 +164,6 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
                 $drives = [];
                 foreach (Arr::get($oneDrives, "value", []) as $drive) {
                     $url = $drive["webUrl"];
-                    $urls[] = $url;
                     $urlinfo = parse_url($url);
                     $pathinfo = pathinfo($urlinfo["path"]);
                     $drives[] = [
@@ -174,6 +173,7 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
                         "domain" => $urlinfo["host"],
                         "path" => $pathinfo["dirname"],
                     ];
+                    $urls[] = $urlinfo["host"];
                 }
                 Session::put($state . "_drives", $drives);
 
