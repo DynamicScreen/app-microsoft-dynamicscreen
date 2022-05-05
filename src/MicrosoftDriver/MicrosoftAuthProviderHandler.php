@@ -280,6 +280,7 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
             $auth = $oauthClient->getAccessToken('authorization_code', [ 'code' => $authCode ])
                                 ->jsonSerialize();
             $auth = array_merge($auth, [ 'deltaLinks' => [ $this->getNewPersonalDeltaLink($options) ] ]);
+            $auth["tenant_url"] = $personalUrl;
             $options["PersonalSharePoint"] = $auth;
         }
 
