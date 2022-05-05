@@ -173,7 +173,7 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
                         "domain" => $urlinfo["host"],
                         "path" => $pathinfo["dirname"],
                     ];
-                    $urls[] = $urlinfo["host"];
+                    $urls[] = "https://" . $urlinfo["host"];
                 }
                 Session::put($state . "_drives", $drives);
 
