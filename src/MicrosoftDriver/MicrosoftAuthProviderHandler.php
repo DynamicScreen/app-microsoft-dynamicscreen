@@ -264,7 +264,7 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
             $tenantId = Session::get($state . "_tenant_id");
             $personalUrl = Session::get($state . "_personal_url");
             $oauthClient = $this->getSharepointOAuthClient($tenantId, $personalUrl);
-            
+
             $auth = $oauthClient->getAccessToken('authorization_code', [ 'code' => $authCode ])
                                 ->jsonSerialize();
             $auth = array_merge($auth, [ 'deltaLinks' => [ $this->getNewPersonalDeltaLink($options) ] ]);
