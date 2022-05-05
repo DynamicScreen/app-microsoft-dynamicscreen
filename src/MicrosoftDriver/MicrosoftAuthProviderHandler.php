@@ -55,11 +55,14 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
 
     public function getSharepointOAuthClient($tenantId, $tenantUrl, array $overwrite = [])
     {
+        $urls = collect($tenantUrl);
+
         return $this->getOAuthClient(array_merge([
             'urlAuthorize'   => "https://login.microsoftonline.com/" . $tenantId . config('azure.AUTHORIZE_ENDPOINT'),
             'urlAccessToken' => "https://login.microsoftonline.com/" . $tenantId . config('azure.TOKEN_ENDPOINT'),
             'scopes'         => collect($this->getSharepointScopes())
-                ->map(fn ($scope) => \Str::finish($tenantUrl, "/") . $scope)
+                ->map(fn ($scope) => $urls->map(fn ($url) => \Str::finish($url, "/") . $scope))
+                ->collapse()
                 ->implode(" "),
         ], $overwrite));
     }
@@ -151,13 +154,30 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
                 $tenantId = Arr::get($orgs, "value.0.id");
                 Session::put($state . "_tenant_id", $tenantId);
 
+                $urls = [];
                 $tenantUrl = Arr::get($sites, "webUrl");
+                if ($tenantUrl) {
+                    $urls[] = $tenantUrl;
+                }
                 Session::put($state . "_tenant_url", $tenantUrl);
 
-                $drives = collect(Arr::get($drives, "value"))->only("id", "name", "webUrl");
+                $drives = [];
+                foreach (Arr::get($drives, "value") as $drive) {
+                    $url = $drive["webUrl"];
+                    $urls[] = $url;
+                    $urlinfo = parse_url($url);
+                    $pathinfo = pathinfo($urlinfo["path"]);
+                    $drives[] = [
+                        "id" => $drive["id"],
+                        "name" => $drive["name"],
+                        "url" => $url,
+                        "domain" => $urlinfo["host"],
+                        "path" => $pathinfo["dirname"],
+                    ];
+                }
                 Session::put($state . "_drives", $drives);
 
-                $oauthClient = $this->getSharepointOAuthClient($tenantId, $tenantUrl);
+                $oauthClient = $this->getSharepointOAuthClient($tenantId, $urls);
 
                 $authUrl = $oauthClient->getAuthorizationUrl();
 
@@ -198,11 +218,11 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
                 $options["sharepoint"] = $auth;
 
                 $options["sharepoint"]["tenant_url"] = $tenantUrl;
-                logs()->info("Retrieved tenant URL from session: " . $options["sharepoint"]["tenant_url"]);
+                logs()->info("Retrieved tenant URL from session: " . $tenantUrl);
                 Session::forget($state . "_tenant_url");
 
-                $options["sharepoint"]["tenant_id"] = $tenantUrl;
-                logs()->info("Retrieved tenant ID from session: " . $options["sharepoint"]["tenant_id"]);
+                $options["sharepoint"]["tenant_id"] = $tenantId;
+                logs()->info("Retrieved tenant ID from session: " . $tenantId);
                 Session::forget($state . "_tenant_id");
 
                 $options["sharepoint"]["drives"] = Session::get($state . "_drives");
