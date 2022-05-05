@@ -225,11 +225,11 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
                     if ($personalUrl) {
                         // We have to go to step 3 for Personal SharePoint
                         logs()->info("Need to authenticate on: " . $personalUrl);
-                        $oauthClient = $this->getSharepointOAuthClient($tenantId, $personalUrl);
+                        $personalOAuth = $this->getSharepointOAuthClient($tenantId, $personalUrl);
 
-                        $authUrl = $oauthClient->getAuthorizationUrl();
+                        $authUrl = $personalOAuth->getAuthorizationUrl();
 
-                        $newState = $oauthClient->getState();
+                        $newState = $personalOAuth->getState();
                         logs()->info("New state: " . $newState);
 
                         Session::put($newState, Session::get($state));
@@ -252,6 +252,18 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
                 } catch (\Exception $e) {
                     dd('Error in callback microsoft driver', $e);
                 }
+            } else {
+                $authCode = $request->get('code');
+                abort_unless($authCode, 400, 'No code');
+
+                $oauthClient = $this->getOAuthClient();
+
+                try {
+                    $options = $oauthClient->getAccessToken('authorization_code', [ 'code' => $authCode ])->jsonSerialize();
+                    $options = array_merge($options, [ 'deltaLinks' => [ $this->getNewPersonalDeltaLink($options) ] ]);
+                } catch (\Exception $e) {
+                    dd('Error in callback microsoft driver', $e);
+                }
             }
 
         } else if ($step === 3) {
@@ -271,18 +283,6 @@ class MicrosoftAuthProviderHandler extends OAuthProviderHandler
             $options["PersonalSharePoint"] = $auth;
         }
 
-
-        $authCode = $request->get('code');
-        abort_unless($authCode, 400, 'No code');
-
-        $oauthClient = $this->getOAuthClient();
-
-        try {
-            $options = $oauthClient->getAccessToken('authorization_code', [ 'code' => $authCode ])->jsonSerialize();
-            $options = array_merge($options, [ 'deltaLinks' => [ $this->getNewPersonalDeltaLink($options) ] ]);
-        } catch (\Exception $e) {
-            dd('Error in callback microsoft driver', $e);
-        }
 
         Session::forget($state);
         Session::forget($state . "_step");
